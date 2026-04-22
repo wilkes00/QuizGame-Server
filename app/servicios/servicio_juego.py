@@ -1,0 +1,37 @@
+import mysql.connector
+
+class ServicioJuego:
+    def get_connection(self):
+        return mysql.connector.connect(
+            host='localhost',
+            user='root',
+            password='root',
+            database='quiz_game'
+        )
+    
+    def obtenerPreguntasAleatorias(self, id_categoria):
+        conn = self.get_connection()
+        try:
+            with conn.cursor(dictionary=True) as cursor:
+                #consulta principal
+                query = "SELECT id_pregunta, texto_pregunta, tipo_respuesta FROM pregunta WHERE id_categoria = %s ORDER BY RAND() LIMIT 10"
+                cursor.execute(query, (id_categoria,))
+                preguntas = cursor.fetchall()
+
+                #obtener respuestas para cada pregunta
+                for pregunta in preguntas:
+                    query_res = "SELECT id_respuesta, texto_respuesta, ruta_imagen, es_correcta FROM respuesta WHERE id_pregunta = %s"
+                    cursor.execute(query_res, (pregunta['id_pregunta'],))
+
+                    respuestas = cursor.fetchall()
+
+                    #cambio de 'es_correcta' a true/false para JSON
+                    for respuesta in respuestas:
+                        respuesta['es_correcta'] = bool(respuesta['es_correcta'])
+                    
+                    pregunta['respuestas'] = respuestas
+                
+                return preguntas
+        finally:
+            if conn.is_connected():
+                conn.close()
