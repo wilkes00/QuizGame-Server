@@ -10,9 +10,33 @@ class TCPServer:
         self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server.bind((host, port))
         self.server.listen(5)
+
+        # Configuración UDP
+        self.server_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.server_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_udp.bind((host, port))
+
         self.servicio_juego = ServicioJuego()
         print(f"[*] Servidor TCP Sockets iniciado en el puerto {port}")
+        print("[*] Escuchando UDP y conexiones TCP...")
 
+    
+    def escuchar_udp(self):
+        #este hilo solo se encarga de escuchar solicitudes UDP para el auto-descubrimiento del servidor
+        while True:
+            try:
+                data, addr = self.server_udp.recvfrom(1024)
+                mensaje = data.decode('utf-8')
+                
+                #este es el mensaje que el cliente envia para descubrir el servidor en la red local
+                if mensaje == "QUIZ_GAME_SERVIDOR":
+                    print(f"[UDP] Solicitud de descubrimiento desde {addr[0]}")
+                    #respuesta al cliente para que sepa la IP del servidor
+                    self.server_udp.sendto("AQUI_ESTOY".encode('utf-8'), addr)
+            except Exception as e:
+                print(f"[UDP Error] {e}")
+
+    #manejador para cada cliente TCP que se conecta
     def manejador_cliente(self, conn, addr):
         print(f"[+] Jugador conectado desde: {addr}")
         try:
@@ -44,6 +68,10 @@ class TCPServer:
             conn.close()
 
     def start(self):
+        # hilo para escuchar solicitudes UDP de auto-descubrimiento
+        thread_udp = threading.Thread(target=self.escuchar_udp, daemon=True)
+        thread_udp.start()
+
         while True:
             #espera hasta que un cliente se conecte
             conn, addr = self.server.accept()
