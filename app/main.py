@@ -39,28 +39,45 @@ class TCPServer:
     #manejador para cada cliente TCP que se conecta
     def manejador_cliente(self, conn, addr):
         print(f"[+] Jugador conectado desde: {addr}")
+
+        #tiempo de gracia, si pasan 60 segundos en silencio, el server corta la conexion
+        conn.settimeout(60.0)
+
         try:
             #bucle para escuchar indefinidamente al cliente
             while True:
-                data = conn.recv(1024).decode('utf-8').strip()
-                if not data:
-                    break #el cliente cerro la conexion
-                print(f"Mensaje recibido de {addr}: {data}")
+                try:
+                    data = conn.recv(1024).decode('utf-8').strip()
+                    if not data:
+                        break #el cliente cerro la conexion
+                    print(f"Mensaje recibido de {addr}: {data}")
 
-                #Protocolo se debe enviar "INICIAR_PARtIDA:1"
-                if data.startswith("INICIAR_PARTIDA:"):
-                    partes = data.split(":")
-                    if len(partes) == 2 and partes[1].isdigit():
-                        id_cat = int(partes[1])
+                    if data.startswith("REGISTRAR_USUARIO:"):
+                        nombre = data.split(":")[1]
+                        #registrar en la db y obtener el id
+                        id_usuario = self.servicio_juego.registrar_usuario(nombre)
 
-                        #obtener datos usando el servicio del juego
-                        preguntas = self.servicio_juego.obtenerPreguntasAleatorias(id_cat)
+                        #envio al cliente de su id
+                        res = f"USUARIO_REGISTRADO:{id_usuario}\n"
+                        conn.sendall(res.encode('utf-8'))
+                        print(f"Usuario '{nombre}' registrado con el ID: {id_usuario}")
 
-                        #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
-                        #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
-                        respuesta_json = json.dumps({"comando": "PREGUNTAS", "datos": preguntas}) + "\n"
-                        conn.sendall(respuesta_json.encode('utf-8'))
+                    #Protocolo se debe enviar "INICIAR_PARtIDA:1"
+                    if data.startswith("INICIAR_PARTIDA:"):
+                        partes = data.split(":")
+                        if len(partes) == 2 and partes[1].isdigit():
+                            id_cat = int(partes[1])
 
+                            #obtener datos usando el servicio del juego
+                            preguntas = self.servicio_juego.obtenerPreguntasAleatorias(id_cat)
+
+                            #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
+                            #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
+                            respuesta_json = json.dumps({"comando": "PREGUNTAS", "datos": preguntas}) + "\n"
+                            conn.sendall(respuesta_json.encode('utf-8'))
+                except socket.timeout:
+                    print(f"El jugador {addr[0]} se quedo AFK. Cerrando conexion.")
+                    break #romper el bucle si el jugador no responde en 60 segundos
         except Exception as e:
             print(f"[-] Error con el jugador {addr}: {e}")
         finally:
