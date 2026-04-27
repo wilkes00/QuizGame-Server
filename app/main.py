@@ -16,6 +16,7 @@ class TCPServer:
         self.server_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_udp.bind((host, port))
 
+        #inicio del servidor y sus servicios
         self.servicio_juego = ServicioJuego()
         print(f"[*] Servidor TCP Sockets iniciado en el puerto {port}")
         print("[*] Escuchando UDP y conexiones TCP...")
@@ -51,7 +52,9 @@ class TCPServer:
                     if not data:
                         break #el cliente cerro la conexion
                     print(f"Mensaje recibido de {addr}: {data}")
-
+                    
+                    #este es el mensaje deberia enviar el cliente para que el servidor registre al usuario en la db
+                    #es REGISTRAR_USUARIO: seguido del nombre del usuario
                     if data.startswith("REGISTRAR_USUARIO:"):
                         nombre = data.split(":")[1]
                         #registrar en la db y obtener el id
@@ -62,7 +65,7 @@ class TCPServer:
                         conn.sendall(res.encode('utf-8'))
                         print(f"Usuario '{nombre}' registrado con el ID: {id_usuario}")
 
-                    #Protocolo se debe enviar "INICIAR_PARtIDA:1"
+                    #Protocolo se debe enviar "INICIAR_PARTIDA:1"
                     if data.startswith("INICIAR_PARTIDA:"):
                         partes = data.split(":")
                         if len(partes) == 2 and partes[1].isdigit():
