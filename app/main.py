@@ -52,7 +52,7 @@ class TCPServer:
                         break #el cliente cerro la conexion
                     print(f"Mensaje recibido de {addr}: {data}")
 
-                    if data.startwith("REGISTRAR_USUARIO:"):
+                    if data.startswith("REGISTRAR_USUARIO:"):
                         nombre = data.split(":")[1]
                         #registrar en la db y obtener el id
                         id_usuario = self.servicio_juego.registrar_usuario(nombre)
