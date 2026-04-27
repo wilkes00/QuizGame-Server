@@ -9,6 +9,19 @@ class ServicioJuego:
             database='quiz_game'
         )
     
+    def obtenerCategorias(self):
+        conn = self.get_connection()
+        try:
+            with conn.cursor(dictionary=True) as cursor:
+                query = "SELECT * FROM categoria;"
+                cursor.execute(query)
+                categorias = cursor.fetchall()
+
+                return categorias
+        finally:
+            if conn.is_connected():
+                conn.close()
+    
     def obtenerPreguntasAleatorias(self, id_categoria):
         conn = self.get_connection()
         try:
@@ -55,6 +68,19 @@ class ServicioJuego:
                     conn.commit()
                     #regresa el id generado por la db
                     return cursor.lastrowid
+        finally:
+            if conn.is_connected():
+                conn.close()
+
+    def crear_partida(self, id_categoria):
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                #insertamos la partida y obtenemos el id
+                query = "INSERT INTO partida (fecha, id_categoria) VALUES (NOW(), %s)"
+                cursor.execute(query, (id_categoria,))
+                conn.commit()
+                return cursor.lastrowid #obtiene el ultimo id insertado
         finally:
             if conn.is_connected():
                 conn.close()

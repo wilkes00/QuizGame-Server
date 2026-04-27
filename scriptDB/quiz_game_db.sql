@@ -53,7 +53,7 @@ CREATE TABLE `partida` (
   PRIMARY KEY (`id_partida`),
   KEY `fk_categoria_idx` (`id_categoria`),
   CONSTRAINT `fk_categoria` FOREIGN KEY (`id_categoria`) REFERENCES `categoria` (`id_categoria`)
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -62,6 +62,7 @@ CREATE TABLE `partida` (
 
 LOCK TABLES `partida` WRITE;
 /*!40000 ALTER TABLE `partida` DISABLE KEYS */;
+INSERT INTO `partida` VALUES (1,2,'2026-04-26 23:20:20');
 /*!40000 ALTER TABLE `partida` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -85,7 +86,7 @@ CREATE TABLE `partida_detalle` (
   CONSTRAINT `partida_detalle_ibfk_1` FOREIGN KEY (`id_partida`) REFERENCES `partida` (`id_partida`) ON DELETE CASCADE,
   CONSTRAINT `partida_detalle_ibfk_2` FOREIGN KEY (`id_pregunta`) REFERENCES `pregunta` (`id_pregunta`),
   CONSTRAINT `partida_detalle_ibfk_3` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_usuario`)
-) ENGINE=InnoDB AUTO_INCREMENT=71 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -213,4 +214,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-04-26 16:08:02
+-- Dump completed on 2026-04-26 23:22:13

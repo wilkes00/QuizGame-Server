@@ -1,7 +1,8 @@
 import socket
 import threading
 import json
-from app.servicios.servicio_juego import ServicioJuego
+import requests
+import random
 
 class TCPServer:
     def __init__(self, host='0.0.0.0', port=5000):
@@ -15,9 +16,9 @@ class TCPServer:
         self.server_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.server_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_udp.bind((host, port))
+        #definicion de la API
+        self.api_url = "http://localhost:8000/api"
 
-        #inicio del servidor y sus servicios
-        self.servicio_juego = ServicioJuego()
         print(f"[*] Servidor TCP Sockets iniciado en el puerto {port}")
         print("[*] Escuchando UDP y conexiones TCP...")
 
@@ -57,27 +58,37 @@ class TCPServer:
                     #es REGISTRAR_USUARIO: seguido del nombre del usuario
                     if data.startswith("REGISTRAR_USUARIO:"):
                         nombre = data.split(":")[1]
-                        #registrar en la db y obtener el id
-                        id_usuario = self.servicio_juego.registrar_usuario(nombre)
+                        #peticion POST a la API
+                        respuesta_api = requests.post(f"{self.api_url}/usuarios", json={"nombre_usuario": nombre})
 
-                        #envio al cliente de su id
-                        res = f"USUARIO_REGISTRADO:{id_usuario}\n"
-                        conn.sendall(res.encode('utf-8'))
-                        print(f"Usuario '{nombre}' registrado con el ID: {id_usuario}")
+                        if respuesta_api.status_code == 200:
+                            id_usuario = respuesta_api.json()["id_usuario"]
+                            res = f"USUARIO_REGISTRADO:{id_usuario}\n"
+                            conn.sendall(res.encode('utf-8'))
+                            print(f"Usuario '{nombre}' registrado via API con el ID: {id_usuario}")
 
                     #Protocolo se debe enviar "INICIAR_PARTIDA:1"
-                    if data.startswith("INICIAR_PARTIDA:"):
+                    elif data.startswith("INICIAR_PARTIDA:"):
                         partes = data.split(":")
                         if len(partes) == 2 and partes[1].isdigit():
                             id_cat = int(partes[1])
 
-                            #obtener datos usando el servicio del juego
-                            preguntas = self.servicio_juego.obtenerPreguntasAleatorias(id_cat)
+                            #peticion POST para crear la partida en la base de datos
+                            post_partida = requests.post(f"{self.api_url}/partidas", json={"id_categoria": id_cat})
+                            id_partida = post_partida.json()["id_partida"]
+
+                            #peticion GET para obtener las preguntas
+                            get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
+                            preguntas = get_preguntas.json()
 
                             #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
                             #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
-                            respuesta_json = json.dumps({"comando": "PREGUNTAS", "datos": preguntas}) + "\n"
+                            respuesta_json = json.dumps({"comando": "PREGUNTAS", 
+                                                         "id_partida" : id_partida, 
+                                                         "datos": preguntas}) + "\n"
+                            
                             conn.sendall(respuesta_json.encode('utf-8'))
+                            print(f"PARTIDA #{id_partida} creada.")
                 except socket.timeout:
                     print(f"El jugador {addr[0]} se quedo AFK. Cerrando conexion.")
                     break #romper el bucle si el jugador no responde en 60 segundos
