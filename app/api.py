@@ -13,6 +13,19 @@ class UsuarioNuevo(BaseModel):
 class PartidaNueva(BaseModel):
     id_categoria: int
 
+#modelo para los detalles de la respuesta, que pregunta fue, que respuesta escogio y si es correcta o no
+class DetalleRespuesta(BaseModel):
+    id_pregunta: int
+    id_respuesta: int
+    fue_correcta: bool
+
+#modelo para guardar en la db el historial de la partida
+class ResultadoPartida(BaseModel):
+    id_partida: int
+    id_usuario: int
+    puntaje_final : int
+    detalles : list[DetalleRespuesta]
+
 #endpoint para registrar usuarios
 @app.post("/api/usuarios")
 def registrar_usuario(usuario: UsuarioNuevo):
@@ -48,3 +61,18 @@ def obtener_preguntas(id_categoria: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+@app.post("/api/resultados")
+def guardar_partida(resultados : ResultadoPartida):
+    try:
+        detalles_dict = [d.model_dump() for d in resultados.detalles]
+
+        filas_insertdas = servicio_juego.guardar_partida(
+            resultados.id_partida,
+            resultados.id_usuario,
+            resultados.puntaje_final,
+            detalles_dict
+        )
+        return{"mensaje" : "Historial guardado con exito"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
