@@ -61,6 +61,7 @@ def obtener_preguntas(id_categoria: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
+#endpoint para guardar los resultados de la partida
 @app.post("/api/resultados")
 def guardar_partida(resultados : ResultadoPartida):
     try:

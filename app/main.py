@@ -49,11 +49,12 @@ class TCPServer:
             #bucle para escuchar indefinidamente al cliente
             while True:
                 try:
-                    data = conn.recv(1024).decode('utf-8').strip()
+                    data = conn.recv(4096).decode('utf-8').strip()
                     if not data:
                         break #el cliente cerro la conexion
                     print(f"Mensaje recibido de {addr}: {data}")
                     
+
                     #este es el mensaje deberia enviar el cliente para que el servidor registre al usuario en la db
                     #es REGISTRAR_USUARIO: seguido del nombre del usuario
                     if data.startswith("REGISTRAR_USUARIO:"):
@@ -67,7 +68,7 @@ class TCPServer:
                             conn.sendall(res.encode('utf-8'))
                             print(f"Usuario '{nombre}' registrado via API con el ID: {id_usuario}")
 
-                    #Protocolo se debe enviar "INICIAR_PARTIDA:1"
+                    #Protocolo se debe enviar "INICIAR_PARTIDA: id_categoria"
                     elif data.startswith("INICIAR_PARTIDA:"):
                         partes = data.split(":")
                         if len(partes) == 2 and partes[1].isdigit():
@@ -89,6 +90,22 @@ class TCPServer:
                             
                             conn.sendall(respuesta_json.encode('utf-8'))
                             print(f"PARTIDA #{id_partida} creada.")
+                    
+                    #Caso en el que se recibe un JSON con los resultados de la partida.
+                    elif data.startswith("{"):
+                        try:
+                            msg_json = json.loads(data)
+                            if msg_json.get("comando") == "FINALIZAR_PARTIDA":
+                                guardar = requests.post(f"{self.api_url}/resultados", json=msg_json)
+
+                                if guardar.status_code == 200:
+                                    filas = guardar.json().get("filas_insertadas", 0)
+                                    print("Salio bien")
+                                    conn.sendall("PARTIDA_GUARDADA\n".encode('utf-8'))
+                                else:
+                                    print("Error con la API al guardar los resultados")
+                        except json.JSONDecodeError:
+                            print("ERROR: Se recibio un JSON malformado de {addr[0]}")
                 except socket.timeout:
                     print(f"El jugador {addr[0]} se quedo AFK. Cerrando conexion.")
                     break #romper el bucle si el jugador no responde en 60 segundos
