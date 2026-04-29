@@ -2,7 +2,6 @@ import socket
 import threading
 import json
 import requests
-import random
 
 class TCPServer:
     def __init__(self, host='0.0.0.0', port=5000):
@@ -132,10 +131,10 @@ class TCPServer:
                                 else:
                                     print("Error con la API al guardar los resultados")
                         except json.JSONDecodeError:
-                            print("ERROR: Se recibio un JSON malformado de {addr[0]}")
+                            print(f"ERROR: Se recibio un JSON malformado de {addr[0]}")
                 except socket.timeout:
                     print(f"El jugador {addr[0]} se quedo AFK. Cerrando conexion.")
-                    break #romper el bucle si el jugador no responde en 60 segundos
+                    break #romper el bucle si el jugador no responde en 5 minutos
         except Exception as e:
             print(f"[-] Error con el jugador {addr}: {e}")
         finally:
