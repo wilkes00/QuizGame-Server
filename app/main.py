@@ -19,6 +19,12 @@ class TCPServer:
         #definicion de la API
         self.api_url = "http://localhost:8000/api"
 
+        #variables para sala de espera
+        self.clientes_conectados = []
+        self.host_conn = None
+        #para evitar problemas entre los hilos
+        self.lock = threading.Lock()
+
         print(f"[*] Servidor TCP Sockets iniciado en el puerto {port}")
         print("[*] Escuchando UDP y conexiones TCP...")
 
@@ -42,8 +48,19 @@ class TCPServer:
     def manejador_cliente(self, conn, addr):
         print(f"[+] Jugador conectado desde: {addr}")
 
-        #tiempo de gracia, si pasan 60 segundos en silencio, el server corta la conexion
-        conn.settimeout(60.0)
+        #tiempo de gracia, si pasan 5 minutos en silencio, el server corta la conexion
+        conn.settimeout(300.0)
+
+        with self.lock:
+            self.clientes_conectados.append(conn)
+
+            if self.host_conn is None:
+                self.host_conn = conn
+                conn.sendall("ROL:HOST\n".encode('utf-8'))
+                print(f"{addr[0]} ha sido asignado como el HOST de la sala.")
+            else:
+                conn.sendall("ROL:JUGADOR\n".encode('utf-8'))
+                print(f"{addr[0]} se unio como JUGADOR")  
 
         try:
             #bucle para escuchar indefinidamente al cliente
@@ -70,27 +87,37 @@ class TCPServer:
 
                     #Protocolo se debe enviar "INICIAR_PARTIDA: id_categoria"
                     elif data.startswith("INICIAR_PARTIDA:"):
-                        partes = data.split(":")
-                        if len(partes) == 2 and partes[1].isdigit():
-                            id_cat = int(partes[1])
+                        #verifcar si quien envia el mensaje es el host
+                        if conn == self.host_conn:
+                            partes = data.split(":")
+                            if len(partes) == 2 and partes[1].isdigit():
+                                id_cat = int(partes[1])
 
-                            #peticion POST para crear la partida en la base de datos
-                            post_partida = requests.post(f"{self.api_url}/partidas", json={"id_categoria": id_cat})
-                            id_partida = post_partida.json()["id_partida"]
+                                #peticion POST para crear la partida en la base de datos
+                                post_partida = requests.post(f"{self.api_url}/partidas", json={"id_categoria": id_cat})
+                                id_partida = post_partida.json()["id_partida"]
 
-                            #peticion GET para obtener las preguntas
-                            get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
-                            preguntas = get_preguntas.json()
+                                #peticion GET para obtener las preguntas
+                                get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
+                                preguntas = get_preguntas.json()
 
-                            #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
-                            #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
-                            respuesta_json = json.dumps({"comando": "PREGUNTAS", 
-                                                         "id_partida" : id_partida, 
-                                                         "datos": preguntas}) + "\n"
-                            
-                            conn.sendall(respuesta_json.encode('utf-8'))
-                            print(f"PARTIDA #{id_partida} creada.")
-                    
+                                #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
+                                #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
+                                respuesta_json = json.dumps({"comando": "PREGUNTAS", 
+                                                            "id_partida" : id_partida, 
+                                                            "datos": preguntas}) + "\n"
+                                
+                                with self.lock:
+                                    for cliente in self.clientes_conectados:
+                                        try:
+                                            cliente.sendall(respuesta_json.encode('utf-8'))
+                                        except Exception as e:
+                                            print(f"No se pudo enviar a un cliente: {e}")
+
+                                print(f"El HOST ha iniciado la partida #{id_partida}. Preguntas enviadas a todos.")
+                        else:
+                              print(f"Un jugador no HOST intento iniciar la partida. Accion bloqueada.")
+
                     #Caso en el que se recibe un JSON con los resultados de la partida.
                     elif data.startswith("{"):
                         try:
@@ -112,7 +139,22 @@ class TCPServer:
         except Exception as e:
             print(f"[-] Error con el jugador {addr}: {e}")
         finally:
-            print(f"[-] Jugador desconectado: {addr}")
+            with self.lock:
+                if conn in self.clientes_conectados:
+                    #se elimina la conexion de la lista si el jugador se desconecta
+                    self.clientes_conectados.remove(conn)
+                
+                if conn == self.host_conn:
+                    self.host_conn = None
+                    if len(self.clientes_conectados) > 0:
+                        self.host_conn = self.clientes_conectados[0]
+                        try:
+                            self.host_conn.sendall("ROL:HOST\n".encode('utf-8'))
+                            print("El HOST original se desconecto. Se ha asignado un nuevo HOST.")
+                        except:
+                            pass
+
+            print(f"[-] Jugador desconectado: {addr[0]}. Quedan {len(self.clientes_conectados)} en la sala.")
             conn.close()
 
     def start(self):
