@@ -49,8 +49,11 @@ class TCPServer:
 
     def mandar_podio(self, id_partida):
         print(f"Solicitando podio para la partida {id_partida}...")
-        res_podio = requests.get(f"{self.api_url}/resultados/{id_partida}")
-        
+        try:
+            res_podio = requests.get(f"{self.api_url}/resultados/{id_partida}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error con la peticion a la API: {e}")
+
         if res_podio.status_code == 200:
             datos_podio = res_podio.json()["podio"]
             json_podio = json.dumps({
@@ -103,8 +106,12 @@ class TCPServer:
                     #es REGISTRAR_USUARIO: seguido del nombre del usuario
                     if data.startswith("REGISTRAR_USUARIO:"):
                         nombre_user = data.split(":")[1]
-                        #peticion POST a la API
-                        respuesta_api = requests.post(f"{self.api_url}/usuario", json={"nombre": nombre_user})
+                        
+                        try:
+                            #peticion POST a la API
+                            respuesta_api = requests.post(f"{self.api_url}/usuario", json={"nombre": nombre_user})
+                        except requests.exceptions.RequestException as e:
+                            print(f"Error con la peticion a la API: {e}")
 
                         if respuesta_api.status_code == 200:
                             id_usuario = respuesta_api.json()["id_usuario"]
@@ -122,8 +129,12 @@ class TCPServer:
                             if len(partes) == 2 and partes[1].isdigit():
                                 id_cat = int(partes[1])
 
-                                #peticion POST para crear la partida en la base de datos
-                                post_partida = requests.post(f"{self.api_url}/partidas", json={"id_categoria": id_cat})
+                                try:
+                                    #peticion POST para crear la partida en la base de datos
+                                    post_partida = requests.post(f"{self.api_url}/partidas", json={"id_categoria": id_cat})
+                                except requests.exceptions.RequestException as e:
+                                    print(f"Error con la peticion a la API: {e}")
+
                                 if post_partida.status_code == 200:
                                     id_partida = post_partida.json()["id_partida"]
 
@@ -132,8 +143,12 @@ class TCPServer:
                                         self.partida_actual = id_partida
                                         self.respuestas_recibidas = 0
 
-                                    #peticion GET para obtener las preguntas
-                                    get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
+                                    try:
+                                        #peticion GET para obtener las preguntas
+                                        get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
+                                    except requests.exceptions.RequestException as e:
+                                        print(f"Error con la peticion a la API: {e}")
+
                                     preguntas = get_preguntas.json()
 
                                     #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
@@ -158,7 +173,11 @@ class TCPServer:
                         try:
                             msg_json = json.loads(data)
                             if msg_json.get("comando") == "FINALIZAR_PARTIDA":
-                                guardar = requests.post(f"{self.api_url}/resultados", json=msg_json)
+                                try:
+                                    #peticion POST a la api para guardar los resultados en la base de datos
+                                    guardar = requests.post(f"{self.api_url}/resultados", json=msg_json)
+                                except requests.exceptions.RequestException as e:
+                                    print(f"Error con la peticion a la API: {e}")
 
                                 if guardar.status_code == 200:
                                     print("[*] Resultados de un jugador guardados exitosamente")
