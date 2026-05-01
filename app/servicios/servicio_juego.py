@@ -49,22 +49,22 @@ class ServicioJuego:
             if conn.is_connected():
                 conn.close()
     
-    def registrar_usuario(self, nombre_usuario):
+    def registrar_usuario(self, nombre):
         conn = self.get_connection()
         
         try:
             with conn.cursor(dictionary=True) as cursor:
                 #verificar si el usuario ya existe
-                query_verificar = "SELECT id_usuario FROM usuario WHERE nombre_usuario = %s"
-                cursor.execute(query_verificar, (nombre_usuario,))
+                query_verificar = "SELECT id_usuario FROM usuario WHERE nombre = %s"
+                cursor.execute(query_verificar, (nombre,))
                 usuario = cursor.fetchone()
 
                 if usuario:
                     return usuario['id_usuario']
                 else:
                     #si no existe, entonces insertarlo en la db
-                    query_insert = "INSERT INTO usuario (nombre_usuario) VALUES (%s)"
-                    cursor.execute(query_insert, (nombre_usuario,))
+                    query_insert = "INSERT INTO usuario (nombre) VALUES (%s)"
+                    cursor.execute(query_insert, (nombre,))
                     conn.commit()
                     #regresa el id generado por la db
                     return cursor.lastrowid

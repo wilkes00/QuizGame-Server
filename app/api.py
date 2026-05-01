@@ -7,7 +7,7 @@ servicio_juego = ServicioJuego()
 
 #modelo para registrar a un usuario
 class UsuarioNuevo(BaseModel):
-    nombre_usuario: str
+    nombre: str
 
 #modelo para las partidas
 class PartidaNueva(BaseModel):
@@ -30,7 +30,7 @@ class ResultadoPartida(BaseModel):
 @app.post("/api/usuario")
 def registrar_usuario(usuario: UsuarioNuevo):
     try:
-        id_user = servicio_juego.registrar_usuario(usuario.nombre_usuario)
+        id_user = servicio_juego.registrar_usuario(usuario.nombre)
         return {"id_usuario": id_user}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

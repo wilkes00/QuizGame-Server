@@ -76,15 +76,15 @@ class TCPServer:
                     #este es el mensaje deberia enviar el cliente para que el servidor registre al usuario en la db
                     #es REGISTRAR_USUARIO: seguido del nombre del usuario
                     if data.startswith("REGISTRAR_USUARIO:"):
-                        nombre = data.split(":")[1]
+                        nombre_user = data.split(":")[1]
                         #peticion POST a la API
-                        respuesta_api = requests.post(f"{self.api_url}/usuario", json={"nombre_usuario": nombre})
+                        respuesta_api = requests.post(f"{self.api_url}/usuario", json={"nombre": nombre_user})
 
                         if respuesta_api.status_code == 200:
                             id_usuario = respuesta_api.json()["id_usuario"]
                             res = f"USUARIO_REGISTRADO:{id_usuario}\n"
                             conn.sendall(res.encode('utf-8'))
-                            print(f"Usuario '{nombre}' registrado via API con el ID: {id_usuario}")
+                            print(f"Usuario '{nombre_user}' registrado via API con el ID: {id_usuario}")
                         else:
                             print(f"Error 500 de la API al registrar: {respuesta_api.text}")
 
