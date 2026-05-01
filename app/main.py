@@ -25,6 +25,7 @@ class TCPServer:
         self.lock = threading.Lock()
         #contador
         self.respuestas_recibidas = 0
+        self.partida_actual = None
 
         print(f"[*] Servidor TCP Sockets iniciado en el puerto {port}")
         print("[*] Escuchando UDP y conexiones TCP...")
@@ -44,6 +45,31 @@ class TCPServer:
                     self.server_udp.sendto("AQUI_ESTOY".encode('utf-8'), addr)
             except Exception as e:
                 print(f"[UDP Error] {e}")
+
+
+    def mandar_podio(self, id_partida):
+        print(f"Solicitando podio para la partida {id_partida}...")
+        res_podio = requests.get(f"{self.api_url}/resultados/{id_partida}")
+        
+        if res_podio.status_code == 200:
+            datos_podio = res_podio.json()["podio"]
+            json_podio = json.dumps({
+                "comando": "MOSTRAR_PODIO",
+                "datos": datos_podio
+            }) + "\n"
+            
+            for cliente in self.clientes_conectados:
+                try:
+                    cliente.sendall(json_podio.encode('utf-8'))
+                except:
+                    pass
+            
+            print(f"[*] Podio enviado a {len(self.clientes_conectados)} jugadores.")
+        
+        #reinicio de las variables para la siguiente partida
+        self.respuestas_recibidas = 0
+        self.partida_actual = None
+
 
     #manejador para cada cliente TCP que se conecta
     def manejador_cliente(self, conn, addr):
@@ -101,24 +127,29 @@ class TCPServer:
                                 if post_partida.status_code == 200:
                                     id_partida = post_partida.json()["id_partida"]
 
-                                #peticion GET para obtener las preguntas
-                                get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
-                                preguntas = get_preguntas.json()
+                                    #reinicio de variables para esta nueva partida
+                                    with self.lock:
+                                        self.partida_actual = id_partida
+                                        self.respuestas_recibidas = 0
 
-                                #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
-                                #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
-                                respuesta_json = json.dumps({"comando": "PREGUNTAS", 
-                                                            "id_partida" : id_partida, 
-                                                            "datos": preguntas}) + "\n"
-                                
-                                with self.lock:
-                                    for cliente in self.clientes_conectados:
-                                        try:
-                                            cliente.sendall(respuesta_json.encode('utf-8'))
-                                        except Exception as e:
-                                            print(f"No se pudo enviar a un cliente: {e}")
+                                    #peticion GET para obtener las preguntas
+                                    get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
+                                    preguntas = get_preguntas.json()
 
-                                print(f"El HOST ha iniciado la partida #{id_partida}. Preguntas enviadas a todos.")
+                                    #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
+                                    #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
+                                    respuesta_json = json.dumps({"comando": "PREGUNTAS", 
+                                                                "id_partida" : id_partida, 
+                                                                "datos": preguntas}) + "\n"
+                                    
+                                    with self.lock:
+                                        for cliente in self.clientes_conectados:
+                                            try:
+                                                cliente.sendall(respuesta_json.encode('utf-8'))
+                                            except Exception as e:
+                                                print(f"No se pudo enviar a un cliente: {e}")
+
+                                    print(f"El HOST ha iniciado la partida #{id_partida}. Preguntas enviadas a todos.")
                         else:
                               print(f"Un jugador no HOST intento iniciar la partida. Accion bloqueada.")
 
@@ -139,31 +170,7 @@ class TCPServer:
                                         
                                         #condicion: ya se recibio todos los resultados de los jugadores?
                                         if self.respuestas_recibidas == total_jugadores:
-                                            id_partida = msg_json["id_partida"]
-                                            
-                                            #peticion get a la api
-                                            res_podio = requests.get(f"{self.api_url}/resultados/{id_partida}")
-                                            
-                                            if res_podio.status_code == 200:
-                                                datos_podio = res_podio.json()["podio"]
-                                                
-                                                #empaquetado del json
-                                                json_podio = json.dumps({
-                                                    "comando": "MOSTRAR_PODIO",
-                                                    "datos": datos_podio
-                                                }) + "\n"
-                                                
-                                                #manda el podio a todos los clientes al mismo tiempo
-                                                for cliente in self.clientes_conectados:
-                                                    try:
-                                                        cliente.sendall(json_podio.encode('utf-8'))
-                                                    except:
-                                                        pass
-                                                
-                                                print(f"[*] Podio enviado a {total_jugadores} jugadores.")
-                                            
-                                            #reinicio del contador para la siguiente partida
-                                            self.respuestas_recibidas = 0
+                                            self.mandar_podio(self.partida_actual)
                                 else:
                                     print("Error con la API al guardar los resultados")
                         except json.JSONDecodeError:
@@ -178,7 +185,9 @@ class TCPServer:
                 if conn in self.clientes_conectados:
                     #se elimina la conexion de la lista si el jugador se desconecta
                     self.clientes_conectados.remove(conn)
+
                 
+
                 if conn == self.host_conn:
                     self.host_conn = None
                     if len(self.clientes_conectados) > 0:
@@ -188,7 +197,14 @@ class TCPServer:
                             print("El HOST original se desconecto. Se ha asignado un nuevo HOST.")
                         except:
                             pass
-
+                
+                total_jugadores = len(self.clientes_conectados)
+                #si hay una partida activa, aun quedan jugadores, y los que quedan ya terminaron:
+                if self.partida_actual is not None and total_jugadores > 0:
+                   if self.respuestas_recibidas >= total_jugadores:
+                        print("Un jugador se desconecto, generando el podio para los jugadores restantes...")
+                        self.mandar_podio(self.partida_actual)
+                   
             print(f"[-] Jugador desconectado: {addr[0]}. Quedan {len(self.clientes_conectados)} en la sala.")
             conn.close()
 
