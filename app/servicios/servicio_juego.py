@@ -103,4 +103,20 @@ class ServicioJuego:
             if conn.is_connected():
                 conn.close()
         
+    def obtener_podio(self, id_partida):
+        conn = self.get_connection()
+        try:
+            with conn.cursor(dictionary=True) as cursor:
+                query = """
+                    SELECT u.nombre_usuario, pu.puntaje_final
+                    FROM partida_usuario pu
+                    JOIN usuario u ON pu.id_usuario = u.id_usuario
+                    WHERE pu.id_partida = %s
+                    ORDER BY pu.puntaje_final DESC
+                """
+                cursor.execute(query, (id_partida,))
+                return cursor.fetchall()
+        finally:
+            if conn.is_connected():
+                conn.close()
 
