@@ -108,7 +108,7 @@ class ServicioJuego:
         try:
             with conn.cursor(dictionary=True) as cursor:
                 query = """
-                    SELECT u.nombre_usuario, pu.puntaje_final
+                    SELECT u.nombre, pu.puntaje_final
                     FROM partida_usuario pu
                     JOIN usuario u ON pu.id_usuario = u.id_usuario
                     WHERE pu.id_partida = %s
