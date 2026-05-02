@@ -2,7 +2,6 @@ import socket
 import threading
 import json
 import requests
-import random
 
 class TCPServer:
     def __init__(self, host='0.0.0.0', port=5000):
@@ -18,6 +17,15 @@ class TCPServer:
         self.server_udp.bind((host, port))
         #definicion de la API
         self.api_url = "http://localhost:8000/api"
+
+        #variables para sala de espera
+        self.clientes_conectados = []
+        self.host_conn = None
+        #para evitar problemas entre los hilos
+        self.lock = threading.Lock()
+        #contador
+        self.respuestas_recibidas = 0
+        self.partida_actual = None
 
         print(f"[*] Servidor TCP Sockets iniciado en el puerto {port}")
         print("[*] Escuchando UDP y conexiones TCP...")
@@ -38,12 +46,52 @@ class TCPServer:
             except Exception as e:
                 print(f"[UDP Error] {e}")
 
+
+    def mandar_podio(self, id_partida):
+        print(f"Solicitando podio para la partida {id_partida}...")
+        try:
+            res_podio = requests.get(f"{self.api_url}/resultados/{id_partida}")
+
+            if res_podio.status_code == 200:
+                datos_podio = res_podio.json()["podio"]
+                json_podio = json.dumps({
+                    "comando": "MOSTRAR_PODIO",
+                    "datos": datos_podio
+                }) + "\n"
+                
+                for cliente in self.clientes_conectados:
+                    try:
+                        cliente.sendall(json_podio.encode('utf-8'))
+                    except:
+                        pass
+            
+                print(f"[*] Podio enviado a {len(self.clientes_conectados)} jugadores.")
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error con la peticion a la API: {e}")
+        
+        #reinicio de las variables para la siguiente partida
+        self.respuestas_recibidas = 0
+        self.partida_actual = None
+
+
     #manejador para cada cliente TCP que se conecta
     def manejador_cliente(self, conn, addr):
         print(f"[+] Jugador conectado desde: {addr}")
 
-        #tiempo de gracia, si pasan 60 segundos en silencio, el server corta la conexion
-        conn.settimeout(60.0)
+        #tiempo de gracia, si pasan 5 minutos en silencio, el server corta la conexion
+        conn.settimeout(300.0)
+
+        with self.lock:
+            self.clientes_conectados.append(conn)
+
+            if self.host_conn is None:
+                self.host_conn = conn
+                conn.sendall("ROL:HOST\n".encode('utf-8'))
+                print(f"{addr[0]} ha sido asignado como el HOST de la sala.")
+            else:
+                conn.sendall("ROL:JUGADOR\n".encode('utf-8'))
+                print(f"{addr[0]} se unio como JUGADOR")  
 
         try:
             #bucle para escuchar indefinidamente al cliente
@@ -58,61 +106,134 @@ class TCPServer:
                     #este es el mensaje deberia enviar el cliente para que el servidor registre al usuario en la db
                     #es REGISTRAR_USUARIO: seguido del nombre del usuario
                     if data.startswith("REGISTRAR_USUARIO:"):
-                        nombre = data.split(":")[1]
-                        #peticion POST a la API
-                        respuesta_api = requests.post(f"{self.api_url}/usuarios", json={"nombre_usuario": nombre})
+                        nombre_user = data.split(":")[1]
+                        
+                        try:
+                            #peticion POST a la API
+                            respuesta_api = requests.post(f"{self.api_url}/usuario", json={"nombre": nombre_user})
 
-                        if respuesta_api.status_code == 200:
-                            id_usuario = respuesta_api.json()["id_usuario"]
-                            res = f"USUARIO_REGISTRADO:{id_usuario}\n"
-                            conn.sendall(res.encode('utf-8'))
-                            print(f"Usuario '{nombre}' registrado via API con el ID: {id_usuario}")
+                            if respuesta_api.status_code == 200:
+                                id_usuario = respuesta_api.json()["id_usuario"]
+                                res = f"USUARIO_REGISTRADO:{id_usuario}\n"
+                                conn.sendall(res.encode('utf-8'))
+                                print(f"Usuario '{nombre_user}' registrado via API con el ID: {id_usuario}")
+                            else:
+                                print(f"Error 500 de la API al registrar: {respuesta_api.text}")
+                        except requests.exceptions.RequestException as e:
+                            print(f"Error con la peticion a la API: {e}")
 
                     #Protocolo se debe enviar "INICIAR_PARTIDA: id_categoria"
                     elif data.startswith("INICIAR_PARTIDA:"):
-                        partes = data.split(":")
-                        if len(partes) == 2 and partes[1].isdigit():
-                            id_cat = int(partes[1])
+                        #verifcar si quien envia el mensaje es el host
+                        if conn == self.host_conn:
+                            partes = data.split(":")
+                            if len(partes) == 2 and partes[1].isdigit():
+                                id_cat = int(partes[1])
 
-                            #peticion POST para crear la partida en la base de datos
-                            post_partida = requests.post(f"{self.api_url}/partidas", json={"id_categoria": id_cat})
-                            id_partida = post_partida.json()["id_partida"]
+                                try:
+                                    #peticion POST para crear la partida en la base de datos
+                                    post_partida = requests.post(f"{self.api_url}/partidas", json={"id_categoria": id_cat})
 
-                            #peticion GET para obtener las preguntas
-                            get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
-                            preguntas = get_preguntas.json()
+                                    if post_partida.status_code == 200:
+                                        id_partida = post_partida.json()["id_partida"]
 
-                            #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
-                            #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
-                            respuesta_json = json.dumps({"comando": "PREGUNTAS", 
-                                                         "id_partida" : id_partida, 
-                                                         "datos": preguntas}) + "\n"
-                            
-                            conn.sendall(respuesta_json.encode('utf-8'))
-                            print(f"PARTIDA #{id_partida} creada.")
-                    
+                                        #reinicio de variables para esta nueva partida
+                                        with self.lock:
+                                            self.partida_actual = id_partida
+                                            self.respuestas_recibidas = 0
+
+                                        try:
+                                            #peticion GET para obtener las preguntas
+                                            get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
+
+                                            if get_preguntas.status_code == 200:
+                                                preguntas = get_preguntas.json()
+
+                                                #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
+                                                #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
+                                                respuesta_json = json.dumps({"comando": "PREGUNTAS", 
+                                                                            "id_partida" : id_partida, 
+                                                                            "datos": preguntas}) + "\n"
+                                                
+                                                with self.lock:
+                                                    for cliente in self.clientes_conectados:
+                                                        try:
+                                                            cliente.sendall(respuesta_json.encode('utf-8'))
+                                                        except Exception as e:
+                                                            print(f"No se pudo enviar a un cliente: {e}")
+
+                                                print(f"El HOST ha iniciado la partida #{id_partida}. Preguntas enviadas a todos.")
+
+                                        except requests.exceptions.RequestException as e:
+                                            print(f"Error con la peticion a la API: {e}")
+
+                                        
+
+                                except requests.exceptions.RequestException as e:
+                                    print(f"Error con la peticion a la API: {e}")
+
+                        else:
+                              print(f"Un jugador no HOST intento iniciar la partida. Accion bloqueada.")
+
                     #Caso en el que se recibe un JSON con los resultados de la partida.
                     elif data.startswith("{"):
                         try:
                             msg_json = json.loads(data)
                             if msg_json.get("comando") == "FINALIZAR_PARTIDA":
-                                guardar = requests.post(f"{self.api_url}/resultados", json=msg_json)
+                                try:
+                                    #peticion POST a la api para guardar los resultados en la base de datos
+                                    guardar = requests.post(f"{self.api_url}/resultados", json=msg_json)
 
-                                if guardar.status_code == 200:
-                                    filas = guardar.json().get("filas_insertadas", 0)
-                                    print("Salio bien")
-                                    conn.sendall("PARTIDA_GUARDADA\n".encode('utf-8'))
-                                else:
-                                    print("Error con la API al guardar los resultados")
+                                    if guardar.status_code == 200:
+                                        print("[*] Resultados de un jugador guardados exitosamente")
+                                        conn.sendall("PARTIDA_GUARDADA\n".encode('utf-8'))
+
+                                        with self.lock:
+                                            self.respuestas_recibidas += 1
+                                            total_jugadores = len(self.clientes_conectados)
+                                            
+                                            #condicion: ya se recibio todos los resultados de los jugadores?
+                                            if self.respuestas_recibidas == total_jugadores:
+                                                self.mandar_podio(self.partida_actual)
+                                    else:
+                                        print("Error con la API al guardar los resultados")
+
+                                except requests.exceptions.RequestException as e:
+                                    print(f"Error con la peticion a la API: {e}")
+
                         except json.JSONDecodeError:
-                            print("ERROR: Se recibio un JSON malformado de {addr[0]}")
+                            print(f"ERROR: Se recibio un JSON malformado de {addr[0]}")
                 except socket.timeout:
                     print(f"El jugador {addr[0]} se quedo AFK. Cerrando conexion.")
-                    break #romper el bucle si el jugador no responde en 60 segundos
+                    break #romper el bucle si el jugador no responde en 5 minutos
         except Exception as e:
             print(f"[-] Error con el jugador {addr}: {e}")
         finally:
-            print(f"[-] Jugador desconectado: {addr}")
+            with self.lock:
+                if conn in self.clientes_conectados:
+                    #se elimina la conexion de la lista si el jugador se desconecta
+                    self.clientes_conectados.remove(conn)
+
+                
+
+                if conn == self.host_conn:
+                    self.host_conn = None
+                    if len(self.clientes_conectados) > 0:
+                        self.host_conn = self.clientes_conectados[0]
+                        try:
+                            self.host_conn.sendall("ROL:HOST\n".encode('utf-8'))
+                            print("El HOST original se desconecto. Se ha asignado un nuevo HOST.")
+                        except:
+                            pass
+                
+                total_jugadores = len(self.clientes_conectados)
+                #si hay una partida activa, aun quedan jugadores, y los que quedan ya terminaron:
+                if self.partida_actual is not None and total_jugadores > 0:
+                   if self.respuestas_recibidas >= total_jugadores:
+                        print("Un jugador se desconecto, generando el podio para los jugadores restantes...")
+                        self.mandar_podio(self.partida_actual)
+                   
+            print(f"[-] Jugador desconectado: {addr[0]}. Quedan {len(self.clientes_conectados)} en la sala.")
             conn.close()
 
     def start(self):

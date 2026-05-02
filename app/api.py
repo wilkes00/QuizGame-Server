@@ -7,7 +7,7 @@ servicio_juego = ServicioJuego()
 
 #modelo para registrar a un usuario
 class UsuarioNuevo(BaseModel):
-    nombre_usuario: str
+    nombre: str
 
 #modelo para las partidas
 class PartidaNueva(BaseModel):
@@ -27,10 +27,10 @@ class ResultadoPartida(BaseModel):
     detalles : list[DetalleRespuesta]
 
 #endpoint para registrar usuarios
-@app.post("/api/usuarios")
+@app.post("/api/usuario")
 def registrar_usuario(usuario: UsuarioNuevo):
     try:
-        id_user = servicio_juego.registrar_usuario(usuario.nombre_usuario)
+        id_user = servicio_juego.registrar_usuario(usuario.nombre)
         return {"id_usuario": id_user}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -77,3 +77,11 @@ def guardar_partida(resultados : ResultadoPartida):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+#endpoint para obtener los puntajes finales de una partida
+@app.get("/api/resultados/{id_partida}")
+def obtener_podio(id_partida: int):
+    try:
+        podio = servicio_juego.obtener_podio(id_partida)
+        return {"podio": podio}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
