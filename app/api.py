@@ -16,7 +16,6 @@ class PartidaNueva(BaseModel):
 #modelo para los detalles de la respuesta, que pregunta fue, que respuesta escogio y si es correcta o no
 class DetalleRespuesta(BaseModel):
     id_pregunta: int
-    id_respuesta: int
     fue_correcta: bool
 
 #modelo para guardar en la db el historial de la partida

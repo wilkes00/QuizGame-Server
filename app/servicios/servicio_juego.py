@@ -93,8 +93,8 @@ class ServicioJuego:
                 query_puntaje = "INSERT INTO partida_usuario (id_partida, id_usuario, puntaje_final) VALUES (%s, %s, %s)"
                 cursor.execute(query_puntaje, (id_partida, id_usuario, puntaje_final))
 
-                query_detalles = "INSERT INTO partida_detalle (id_partida, id_usuario, id_pregunta, id_respuesta, fue_correcta) VALUES (%s, %s, %s, %s, %s)"
-                res_detalles = [(id_partida, id_usuario, d['id_pregunta'], d['id_respuesta'], d['fue_correcta']) for d in detalles]
+                query_detalles = "INSERT INTO partida_detalle (id_partida, id_usuario, id_pregunta, fue_correcta) VALUES (%s, %s, %s, %s)"
+                res_detalles = [(id_partida, id_usuario, d['id_pregunta'], d['fue_correcta']) for d in detalles]
                 cursor.executemany(query_detalles, res_detalles)
 
                 conn.commit()
