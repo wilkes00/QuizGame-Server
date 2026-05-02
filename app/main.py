@@ -51,23 +51,24 @@ class TCPServer:
         print(f"Solicitando podio para la partida {id_partida}...")
         try:
             res_podio = requests.get(f"{self.api_url}/resultados/{id_partida}")
+
+            if res_podio.status_code == 200:
+                datos_podio = res_podio.json()["podio"]
+                json_podio = json.dumps({
+                    "comando": "MOSTRAR_PODIO",
+                    "datos": datos_podio
+                }) + "\n"
+                
+                for cliente in self.clientes_conectados:
+                    try:
+                        cliente.sendall(json_podio.encode('utf-8'))
+                    except:
+                        pass
+            
+                print(f"[*] Podio enviado a {len(self.clientes_conectados)} jugadores.")
+
         except requests.exceptions.RequestException as e:
             print(f"Error con la peticion a la API: {e}")
-
-        if res_podio.status_code == 200:
-            datos_podio = res_podio.json()["podio"]
-            json_podio = json.dumps({
-                "comando": "MOSTRAR_PODIO",
-                "datos": datos_podio
-            }) + "\n"
-            
-            for cliente in self.clientes_conectados:
-                try:
-                    cliente.sendall(json_podio.encode('utf-8'))
-                except:
-                    pass
-            
-            print(f"[*] Podio enviado a {len(self.clientes_conectados)} jugadores.")
         
         #reinicio de las variables para la siguiente partida
         self.respuestas_recibidas = 0
@@ -110,16 +111,16 @@ class TCPServer:
                         try:
                             #peticion POST a la API
                             respuesta_api = requests.post(f"{self.api_url}/usuario", json={"nombre": nombre_user})
+
+                            if respuesta_api.status_code == 200:
+                                id_usuario = respuesta_api.json()["id_usuario"]
+                                res = f"USUARIO_REGISTRADO:{id_usuario}\n"
+                                conn.sendall(res.encode('utf-8'))
+                                print(f"Usuario '{nombre_user}' registrado via API con el ID: {id_usuario}")
+                            else:
+                                print(f"Error 500 de la API al registrar: {respuesta_api.text}")
                         except requests.exceptions.RequestException as e:
                             print(f"Error con la peticion a la API: {e}")
-
-                        if respuesta_api.status_code == 200:
-                            id_usuario = respuesta_api.json()["id_usuario"]
-                            res = f"USUARIO_REGISTRADO:{id_usuario}\n"
-                            conn.sendall(res.encode('utf-8'))
-                            print(f"Usuario '{nombre_user}' registrado via API con el ID: {id_usuario}")
-                        else:
-                            print(f"Error 500 de la API al registrar: {respuesta_api.text}")
 
                     #Protocolo se debe enviar "INICIAR_PARTIDA: id_categoria"
                     elif data.startswith("INICIAR_PARTIDA:"):
@@ -132,39 +133,45 @@ class TCPServer:
                                 try:
                                     #peticion POST para crear la partida en la base de datos
                                     post_partida = requests.post(f"{self.api_url}/partidas", json={"id_categoria": id_cat})
+
+                                    if post_partida.status_code == 200:
+                                        id_partida = post_partida.json()["id_partida"]
+
+                                        #reinicio de variables para esta nueva partida
+                                        with self.lock:
+                                            self.partida_actual = id_partida
+                                            self.respuestas_recibidas = 0
+
+                                        try:
+                                            #peticion GET para obtener las preguntas
+                                            get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
+
+                                            if get_preguntas.status_code == 200:
+                                                preguntas = get_preguntas.json()
+
+                                                #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
+                                                #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
+                                                respuesta_json = json.dumps({"comando": "PREGUNTAS", 
+                                                                            "id_partida" : id_partida, 
+                                                                            "datos": preguntas}) + "\n"
+                                                
+                                                with self.lock:
+                                                    for cliente in self.clientes_conectados:
+                                                        try:
+                                                            cliente.sendall(respuesta_json.encode('utf-8'))
+                                                        except Exception as e:
+                                                            print(f"No se pudo enviar a un cliente: {e}")
+
+                                                print(f"El HOST ha iniciado la partida #{id_partida}. Preguntas enviadas a todos.")
+
+                                        except requests.exceptions.RequestException as e:
+                                            print(f"Error con la peticion a la API: {e}")
+
+                                        
+
                                 except requests.exceptions.RequestException as e:
                                     print(f"Error con la peticion a la API: {e}")
 
-                                if post_partida.status_code == 200:
-                                    id_partida = post_partida.json()["id_partida"]
-
-                                    #reinicio de variables para esta nueva partida
-                                    with self.lock:
-                                        self.partida_actual = id_partida
-                                        self.respuestas_recibidas = 0
-
-                                    try:
-                                        #peticion GET para obtener las preguntas
-                                        get_preguntas = requests.get(f"{self.api_url}/preguntas/{id_cat}")
-                                    except requests.exceptions.RequestException as e:
-                                        print(f"Error con la peticion a la API: {e}")
-
-                                    preguntas = get_preguntas.json()
-
-                                    #empaquetado de la query en un JSON con un comando para que el cliente lo entienda
-                                    #el \n al final es importante para que StreamReader.ReadLine() funcione bien en C#
-                                    respuesta_json = json.dumps({"comando": "PREGUNTAS", 
-                                                                "id_partida" : id_partida, 
-                                                                "datos": preguntas}) + "\n"
-                                    
-                                    with self.lock:
-                                        for cliente in self.clientes_conectados:
-                                            try:
-                                                cliente.sendall(respuesta_json.encode('utf-8'))
-                                            except Exception as e:
-                                                print(f"No se pudo enviar a un cliente: {e}")
-
-                                    print(f"El HOST ha iniciado la partida #{id_partida}. Preguntas enviadas a todos.")
                         else:
                               print(f"Un jugador no HOST intento iniciar la partida. Accion bloqueada.")
 
@@ -176,22 +183,24 @@ class TCPServer:
                                 try:
                                     #peticion POST a la api para guardar los resultados en la base de datos
                                     guardar = requests.post(f"{self.api_url}/resultados", json=msg_json)
+
+                                    if guardar.status_code == 200:
+                                        print("[*] Resultados de un jugador guardados exitosamente")
+                                        conn.sendall("PARTIDA_GUARDADA\n".encode('utf-8'))
+
+                                        with self.lock:
+                                            self.respuestas_recibidas += 1
+                                            total_jugadores = len(self.clientes_conectados)
+                                            
+                                            #condicion: ya se recibio todos los resultados de los jugadores?
+                                            if self.respuestas_recibidas == total_jugadores:
+                                                self.mandar_podio(self.partida_actual)
+                                    else:
+                                        print("Error con la API al guardar los resultados")
+
                                 except requests.exceptions.RequestException as e:
                                     print(f"Error con la peticion a la API: {e}")
 
-                                if guardar.status_code == 200:
-                                    print("[*] Resultados de un jugador guardados exitosamente")
-                                    conn.sendall("PARTIDA_GUARDADA\n".encode('utf-8'))
-
-                                    with self.lock:
-                                        self.respuestas_recibidas += 1
-                                        total_jugadores = len(self.clientes_conectados)
-                                        
-                                        #condicion: ya se recibio todos los resultados de los jugadores?
-                                        if self.respuestas_recibidas == total_jugadores:
-                                            self.mandar_podio(self.partida_actual)
-                                else:
-                                    print("Error con la API al guardar los resultados")
                         except json.JSONDecodeError:
                             print(f"ERROR: Se recibio un JSON malformado de {addr[0]}")
                 except socket.timeout:
